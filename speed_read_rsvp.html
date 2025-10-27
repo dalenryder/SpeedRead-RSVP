@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpeedRead RSVP</title>
+  <meta name="description" content="Speed reading tool (RSVP) for PDF/DOCX/TXT files. Developed as browser-first for faster reading." />
+  <style>
+    :root {
+      --bg: #fff7ed;           /* warm sand */
+      --panel: #fffbeb;        /* light warm */
+      --text: #2a2926;         /* near black */
+      --muted: #6b6a67;
+      --primary: #f59e0b;      /* amber */
+      --primary-600: #d97706;  /* amber dark */
+      --accent: #ec4899;       /* rose */
+      --ok: #10b981;           /* green */
+      --warn: #f97316;         /* orange */
+      --border: #e7d9c0;
+    }
+    [data-theme="dark"] {
+      --bg: #1c1917;           /* warm charcoal */
+      --panel: #2a241f;
+      --text: #f8fafc;
+      --muted: #b7b3ad;
+      --primary: #f59e0b;
+      --primary-600: #fbbf24;
+      --accent: #f472b6;
+      --ok: #34d399;
+      --warn: #fb923c;
+      --border: #3a332d;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Layout */
+    .app { display: grid; grid-template-rows: auto 1fr auto; min-height: 100dvh; }
+    header { position: sticky; top: 0; z-index: 5; backdrop-filter: saturate(1.2) blur(6px); background: color-mix(in oklab, var(--bg) 80%, transparent); border-bottom: 1px solid var(--border); }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 0.75rem 1rem; }
+    .brand { display: flex; align-items: center; gap: .75rem; }
+    .brand .logo { width: 36px; height: 36px; border-radius: 10px; flex: 0 0 auto; background: radial-gradient(circle at 30% 30%, var(--primary) 0 40%, var(--accent) 75% 100%); box-shadow: 0 4px 16px color-mix(in oklab, var(--primary) 60%, transparent); }
+    .brand h1 { font-size: 1.125rem; margin: 0; letter-spacing: .2px; }
+
+    .toolbar { display: grid; gap: .5rem; align-items: center; margin-top: .75rem; grid-template-columns: 1fr; }
+    @media (min-width: 720px) { .toolbar { grid-template-columns: 1fr auto; } }
+
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: .75rem; display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+    .panel > * { flex: 0 0 auto; }
+
+    .file-drop { flex: 1 1 220px; min-height: 56px; display: grid; place-items: center; text-align: center; border: 2px dashed var(--border); border-radius: 14px; padding: .75rem; cursor: pointer; background: color-mix(in oklab, var(--panel) 96%, transparent); }
+    .file-drop.drag { border-color: var(--primary); box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--primary) 40%, transparent); }
+    .file-drop input { display: none; }
+    .hint { font-size: .9rem; color: var(--muted); }
+
+    .btn { appearance: none; border: 0; border-radius: 12px; padding: .9rem 1.1rem; font-weight: 600; cursor: pointer; background: var(--primary); color: #1b1106; box-shadow: 0 8px 18px -8px color-mix(in oklab, var(--primary) 60%, transparent); display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; min-width: 44px; }
+    .btn.secondary { background: #e8d7ba; color: #3a2c1a; }
+    [data-theme="dark"] .btn.secondary { background: #3b342d; color: #f8f6f2; }
+    .btn.ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn:disabled { filter: grayscale(.8); opacity: .6; cursor: not-allowed; }
+
+    .controls { display: flex; gap: .5rem; flex-wrap: wrap; }
+    .control { background: transparent; border: 1px solid var(--border); border-radius: 12px; padding: .6rem .75rem; display: flex; align-items: center; gap: .6rem; }
+    .control label { font-size: .9rem; opacity: .9; }
+    .control input[type="range"] { cursor: pointer; }
+
+    /* Reader stage */
+    .stage { display: grid; place-items: center; padding: 1rem; min-height: 58dvh; }
+    .word { font-variant-ligatures: none; letter-spacing: .3px; text-wrap: balance; font-size: clamp(28px, 9vw, 92px); font-weight: 700; line-height: 1.2; text-align: center; font-family: var(--reader-font, ui-sans-serif, system-ui, -apple-system, Segoe UI, Inter, Roboto, "Helvetica Neue", Arial); }
+    .serif { --reader-font: Georgia, Cambria, "Times New Roman", Times, serif; }
+    .pivot { color: var(--accent); }
+
+    .progress { width: 100%; height: 10px; background: color-mix(in oklab, var(--panel) 70%, transparent); border-top: 1px solid var(--border); }
+    .progress > div { height: 100%; background: linear-gradient(90deg, var(--primary), var(--accent)); width: 0%; transition: width .2s linear; }
+
+    footer { padding: 1rem; color: var(--muted); font-size: .95rem; }
+    footer a { color: inherit; }
+
+    /* Utility */
+    .row { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; width: 100%; }
+    .grow { flex: 1 1 auto; }
+    .sep { height: 1px; background: var(--border); margin: .75rem 0; }
+
+    /* Dialog (Info) */
+    dialog { border: 1px solid var(--border); border-radius: 16px; padding: 0; background: var(--panel); color: var(--text); width: min(92vw, 720px); }
+    dialog::backdrop { background: rgba(0,0,0,.35); backdrop-filter: blur(2px); }
+    .dialog-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .dialog-header h2 { margin: 0; font-size: 1.25rem; }
+    .dialog-body { padding: 1rem 1.25rem; line-height: 1.55; }
+    .dialog-actions { padding: .75rem 1.25rem; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: .5rem; }
+    .dialog-body ul { margin: .5rem 0 .5rem 1.25rem; }
+
+    /* Ensure mobile controls never overflow */
+    .panel .row .btn { flex: 1 1 calc(50% - .5rem); }
+    @media (min-width: 540px) { .panel .row .btn { flex: 1 1 calc(25% - .5rem); } }
+    @media (min-width: 900px) { .panel .row .btn { flex: 0 0 auto; } }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header>
+      <div class="wrap">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"></div>
+          <h1>SpeedRead RSVP</h1>
+          <div class="grow"></div>
+          <button class="btn ghost" id="themeToggle" aria-label="Toggle dark mode">🌗</button>
+          <button class="btn ghost" id="fontToggle" aria-label="Toggle serif/sans">Aa</button>
+        </div>
+        <div class="toolbar">
+          <div class="panel">
+            <label class="file-drop" id="drop">
+              <input id="file" type="file" accept=".pdf,.docx,.txt,.md,.rtf" />
+              <div>
+                <strong>Drop or choose a file</strong><br/>
+                <span class="hint">PDF, DOCX, TXT, MD (processed in your browser)</span>
+              </div>
+            </label>
+            <div class="controls">
+              <div class="control">
+                <label for="wpm">Speed</label>
+                <input id="wpm" type="range" min="100" max="1200" value="350" step="10" />
+                <span id="wpmOut">350 wpm</span>
+              </div>
+              <div class="control">
+                <label for="fontsize">Text size</label>
+                <input id="fontsize" type="range" min="28" max="120" value="72" step="1" />
+                <span id="sizeOut">72 px</span>
+              </div>
+              <div class="control">
+                <label for="backstep">Jump back</label>
+                <input id="backstep" type="number" min="1" max="25" value="5" style="width:4.5rem" />
+                <span class="hint">words</span>
+              </div>
+            </div>
+            <div class="row">
+              <button class="btn" id="play">▶ Play</button>
+              <button class="btn secondary" id="pause">⏸ Pause</button>
+              <button class="btn ghost" id="back">⏪ Back</button>
+              <button class="btn ghost" id="forward">⏩ Forward</button>
+              <button class="btn ghost" id="restart">⟲ Restart</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="stage">
+      <div class="word" id="word" aria-live="polite" aria-atomic="true">Load a text to begin</div>
+    </main>
+
+    <div class="progress" aria-hidden="true"><div id="bar"></div></div>
+
+    <footer class="wrap">
+      <div class="row">
+        <div>Upload a PDF or Word file and read it at speed via RSVP</div>
+        <div class="grow"></div>
+        <button class="btn ghost" id="infoBtn" aria-haspopup="dialog" aria-controls="infoDialog">ℹ️ Info</button>
+      </div>
+      <div class="sep"></div>
+      <div class="hint">Keyboard: Space = Play/Pause • ←/→ = Back/Forward • R = Restart • D = Dark mode • F = Font toggle</div>
+    </footer>
+  </div>
+
+  <!-- Info dialog present BEFORE scripts so querySelector works reliably -->
+  <dialog id="infoDialog" aria-labelledby="infoTitle">
+    <div class="dialog-header">
+      <h2 id="infoTitle">How it works</h2>
+      <button class="btn ghost" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="dialog-body">
+      <p><strong>Upload a PDF or Word file and read it at speed via RSVP.</strong> We flash words one at a time in a large, comfortable UI so your eyes don’t need to move.</p>
+      <ul>
+        <li><strong>RSVP</strong>: words are shown sequentially at a set words-per-minute, you can adjust while reading.</li>
+        <li><strong>Pivot letter</strong>: we highlight an Optimal Recognition Point inside each word to help fixation.</li>
+        <li><strong>Natural rhythm</strong>: punctuation and paragraph breaks appear as separate ticks, enabling brief pauses.</li>
+        <li><strong>Controls</strong>: Play/Pause, configurable Jump Back, Forward one, Restart. Keyboard shortcuts listed in the footer.</li>
+        <li><strong>Privacy</strong>: Everything runs locally in your browser, no uploads.</li>
+        <li><strong>Tip</strong>: Start around 300–350 WPM; tweak text size; use Jump Back if something feels too quick.</li>
+      </ul>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn" data-close>Close</button>
+    </div>
+  </dialog>
+
+  <!-- Vendor libs for in-browser parsing -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.min.js"></script>
+  <script defer>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.6.347/pdf.worker.min.js";
+      }
+    });
+  </script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mammoth@1.7.2/mammoth.browser.min.js"></script>
+
+  <!-- App script -->
+  <script defer>
+    window.addEventListener('DOMContentLoaded', () => {
+      const app = document.getElementById('app');
+      const wordEl = document.getElementById('word');
+      const barEl = document.getElementById('bar');
+      const fileInput = document.getElementById('file');
+      const drop = document.getElementById('drop');
+
+      const playBtn = document.getElementById('play');
+      const pauseBtn = document.getElementById('pause');
+      const backBtn = document.getElementById('back');
+      const fwdBtn = document.getElementById('forward');
+      const restartBtn = document.getElementById('restart');
+
+      const wpmInput = document.getElementById('wpm');
+      const wpmOut = document.getElementById('wpmOut');
+      const fontSize = document.getElementById('fontsize');
+      const sizeOut = document.getElementById('sizeOut');
+      const backstep = document.getElementById('backstep');
+
+      const themeToggle = document.getElementById('themeToggle');
+      const fontToggle = document.getElementById('fontToggle');
+      const infoBtn = document.getElementById('infoBtn');
+      const infoDialog = document.getElementById('infoDialog');
+
+      // State
+      let words = [];
+      let i = 0;
+      let timer = null;
+      let isPlaying = false;
+
+      // Settings persistence
+      const store = (k,v)=>localStorage.setItem(k,JSON.stringify(v));
+      const load = (k,def)=>{ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } };
+
+      // Load persisted theme & font
+      setTheme(load('theme','auto'));
+      document.body.classList.toggle('serif', !!load('serif', false));
+
+      // Load persisted controls
+      wpmInput.value = load('wpm', 350);
+      fontSize.value = load('size', 72);
+      backstep.value = load('backstep', 5);
+      syncOutputs();
+      applyFontSize();
+
+      // Theme
+      function setTheme(pref) {
+        let theme = pref;
+        if (pref === 'auto') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        store('theme', pref);
+      }
+
+      themeToggle.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        store('theme', next);
+      });
+
+      fontToggle.addEventListener('click', () => {
+        const on = !document.body.classList.contains('serif');
+        document.body.classList.toggle('serif', on);
+        store('serif', on);
+      });
+
+      // Info dialog
+      if (infoBtn && infoDialog) {
+        infoBtn.addEventListener('click', () => infoDialog.showModal());
+        infoDialog.addEventListener('click', (e) => { if (e.target === infoDialog) infoDialog.close(); });
+        infoDialog.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => infoDialog.close()));
+      }
+
+      // Controls
+      wpmInput.addEventListener('input', () => { syncOutputs(); store('wpm', +wpmInput.value); restartTimerIfPlaying(); });
+      fontSize.addEventListener('input', () => { applyFontSize(); store('size', +fontSize.value); });
+      backstep.addEventListener('change', () => { store('backstep', +backstep.value); });
+
+      function applyFontSize(){ wordEl.style.fontSize = fontSize.value + 'px'; sizeOut.textContent = fontSize.value + ' px'; }
+      function syncOutputs(){ wpmOut.textContent = wpmInput.value + ' wpm'; }
+      function msPerWord(){ return 60000 / Math.max(50, +wpmInput.value); }
+      function restartTimerIfPlaying(){ if(isPlaying){ clearInterval(timer); timer = setInterval(tick, msPerWord()); } }
+
+      // Playback
+      playBtn.addEventListener('click', play);
+      pauseBtn.addEventListener('click', pause);
+      backBtn.addEventListener('click', jumpBack);
+      fwdBtn.addEventListener('click', () => advance(1));
+      restartBtn.addEventListener('click', () => { i = 0; render(); });
+
+      document.addEventListener('keydown', e => {
+        if (e.code === 'Space') { e.preventDefault(); isPlaying ? pause() : play(); }
+        if (e.key === 'ArrowLeft') jumpBack();
+        if (e.key === 'ArrowRight') advance(1);
+        if (e.key.toLowerCase() === 'r') { i = 0; render(); }
+        if (e.key.toLowerCase() === 'd') themeToggle.click();
+        if (e.key.toLowerCase() === 'f') fontToggle.click();
+      });
+
+      function play(){ if (!words.length) return; if (i >= words.length) i = 0; isPlaying = true; clearInterval(timer); timer = setInterval(tick, msPerWord()); }
+      function pause(){ isPlaying = false; clearInterval(timer); }
+      function tick(){ if (i < words.length - 1) { i++; render(); } else { pause(); }}
+      function advance(n){ i = Math.min(words.length - 1, i + (n||1)); render(); }
+      function jumpBack(){ const n = Math.max(1, +backstep.value || 5); i = Math.max(0, i - n); render(); }
+
+      function render(){
+        if (!words.length) { wordEl.textContent = 'Load a text to begin'; barEl.style.width = '0%'; return; }
+        const w = words[i] || '';
+        wordEl.innerHTML = pivotWrap(w);
+        barEl.style.width = ((i+1)/words.length*100).toFixed(2) + '%';
+        if (!isPlaying) document.title = `#${i+1}/${words.length} · SpeedRead`;
+      }
+
+      // RSVP pivot highlighting
+      function pivotWrap(word){
+        const clean = word.replace(/\u200B/g,'');
+        const idx = orpIndex(clean);
+        return clean.slice(0, idx) + '<span class="pivot">' + (clean[idx]||'') + '</span>' + clean.slice(idx+1);
+      }
+      function orpIndex(w){ const len = w.length; if (len <= 1) return 0; if (len <= 5) return 1; if (len <= 9) return 2; if (len <= 13) return 3; return 4; }
+
+      // File handling (drag & drop + input)
+      ['dragenter','dragover'].forEach(evt => drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('drag'); }));
+      ;['dragleave','drop'].forEach(evt => drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('drag'); }));
+      drop.addEventListener('drop', e=>{ const f = e.dataTransfer.files?.[0]; if (f) handleFile(f); });
+      drop.addEventListener('click', ()=> fileInput.click());
+      fileInput.addEventListener('change', e=>{ const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; });
+
+      async function handleFile(file){
+        pause(); i = 0; render();
+        wordEl.textContent = 'Parsing…';
+        try {
+          const text = await extractText(file);
+          words = tokenize(text);
+          if (!words.length) throw new Error('No words found.');
+          render();
+          play();
+        } catch (err){
+          console.error(err);
+          wordEl.textContent = 'Could not read file: ' + (err?.message || err);
+        }
+      }
+
+      function tokenize(text){
+        const cleaned = text
+          .replace(/\r/g,'\n')
+          .replace(/[\t\f\v]+/g,' ')
+          .replace(/\n{2,}/g,' \n ')
+          .replace(/\s{2,}/g,' ')
+          .trim();
+        const parts = cleaned.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*|[.,!?;:—\-]|\n/gu) || [];
+        return parts.filter(Boolean);
+      }
+
+      async function extractText(file){
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        const buf = await file.arrayBuffer();
+        if (ext === 'pdf') return readPdf(buf);
+        if (ext === 'docx') return readDocx(buf);
+        // Fallback: attempt to decode as UTF-8 text (txt/md/rtf)
+        return new TextDecoder('utf-8').decode(new Uint8Array(buf));
+      }
+
+      async function readPdf(arrayBuffer){
+        if (!window.pdfjsLib) throw new Error('PDF.js failed to load (needed for PDF files)');
+        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const pdf = await loadingTask.promise;
+        let out = '';
+        for (let p = 1; p <= pdf.numPages; p++){
+          const page = await pdf.getPage(p);
+          const c = await page.getTextContent();
+          const s = c.items.map(it => it.str).join(' ');
+          out += s + '\n';
+        }
+        return out;
+      }
+      async function readDocx(arrayBuffer){
+        if (!window.mammoth) throw new Error('Mammoth failed to load (needed for DOCX files)');
+        const res = await window.mammoth.convertToHtml({ arrayBuffer });
+        const html = res.value.replace(/<\/(p|h[1-6]|li)>/g, '</$1>\n');
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        return tmp.textContent || '';
+      }
+
+      // First paint
+      render();
+    });
+  </script>
+</body>
+</html>
